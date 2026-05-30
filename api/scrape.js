@@ -1,11 +1,11 @@
-// List of valid API keys from environment variables
+// Hardcoded multi-key system as requested
 const VALID_KEYS = [
-  process.env.demo,
-  process.env.API_KEY_2,
-  process.env.API_KEY_3,
-  process.env.API_KEY_4,
-  process.env.API_KEY_5
-].filter(Boolean);  // Remove undefined
+  'abhay1',
+  'abhay2',
+  'abhay3',
+  'abhay4',
+  'abhay5'
+];
 
 const FOOTER = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -22,16 +22,20 @@ export default async function handler(req, res) {
 
   const { exploits, api_key } = req.query;
 
-  // --- Multi-Key Authentication ---
+  // --- Multi-Key Authentication with abhay1-5 ---
   if (!api_key) {
     return res.status(401).json({ 
       error: 'Missing API key', 
-      usage: '?api_key=YOUR_KEY&exploits=9876543210' 
+      usage: '?api_key=abhay1&exploits=9876543210',
+      valid_keys: VALID_KEYS
     });
   }
 
   if (!VALID_KEYS.includes(api_key)) {
-    return res.status(403).json({ error: 'Invalid or expired API key' });
+    return res.status(403).json({ 
+      error: 'Invalid API key', 
+      valid_keys: VALID_KEYS
+    });
   }
 
   // --- Validate exploits parameter ---
@@ -65,6 +69,9 @@ export default async function handler(req, res) {
 
     // --- Append required footer ---
     content = content + FOOTER;
+
+    // Optional: Log which key was used (visible in Vercel logs)
+    console.log(`[KEY_USED] ${api_key} accessed number: ${exploits}`);
 
     res.status(response.status).send(content);
   } catch (error) {
