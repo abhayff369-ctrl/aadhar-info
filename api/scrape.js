@@ -1,6 +1,6 @@
 // List of valid API keys from environment variables
 const VALID_KEYS = [
-  process.env.API_KEY_1,
+  process.env.demo,
   process.env.API_KEY_2,
   process.env.API_KEY_3,
   process.env.API_KEY_4,
