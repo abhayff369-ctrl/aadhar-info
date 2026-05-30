@@ -2,7 +2,7 @@
 // Deploy on Vercel as a serverless function
 
 const VALID_KEYS = [
-  'abhay1',
+  'demo',
   'abhay2', 
   'abhay3',
   'abhay4',
