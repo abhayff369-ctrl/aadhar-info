@@ -1,6 +1,8 @@
 // ============================================================
-// MULTI-KEY SYSTEM (abhay1 to abhay5) | AADHAAR INPUT
-// Returns JSON | Removes BUY/SUPPORT footer | Adds developer credit
+// AADHAAR LOOKUP API
+// Multi-key: abhay1, abhay2, abhay3, abhay4, abhay5
+// Input: ?api_key=KEY&exploits=12_digit_aadhaar
+// Output: JSON with success, total_results, results, developer
 // ============================================================
 
 const VALID_KEYS = ['abhay1', 'abhay2', 'abhay3', 'abhay4', 'abhay5'];
@@ -16,7 +18,7 @@ export default async function handler(req, res) {
 
   const { exploits, api_key } = req.query;
 
-  // ---------- Multi-Key Authentication ----------
+  // ---------- 1. Multi-Key Authentication ----------
   if (!api_key) {
     return res.status(401).json({ 
       error: 'Missing API key', 
@@ -32,7 +34,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ---------- Validate Aadhaar (12 digits) ----------
+  // ---------- 2. Validate Aadhaar (12 digits) ----------
   if (!exploits) {
     return res.status(400).json({ 
       error: 'Missing Aadhaar number', 
@@ -47,7 +49,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ---------- Target URL (parameter name remains 'exploits') ----------
+  // ---------- 3. Call Target API ----------
   const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${exploits}`;
 
   try {
@@ -60,7 +62,7 @@ export default async function handler(req, res) {
 
     let rawText = await response.text();
 
-    // ---------- Remove BUY/SUPPORT footer lines ----------
+    // ---------- 4. Remove BUY/SUPPORT Footer ----------
     const lines = rawText.split(/\r?\n/);
     const filteredLines = lines.filter(line => {
       const lower = line.toLowerCase();
@@ -71,7 +73,7 @@ export default async function handler(req, res) {
     });
     let cleanedText = filteredLines.join('\n');
 
-    // ---------- Parse cleaned text into JSON results ----------
+    // ---------- 5. Parse to JSON ----------
     const results = parseLookupResults(cleanedText, exploits);
 
     const jsonResponse = {
@@ -94,17 +96,17 @@ export default async function handler(req, res) {
 }
 
 // ============================================================
-// Parser: Converts human-readable text to JSON array
+// Parser: Human-readable text → JSON array
 // ============================================================
 function parseLookupResults(text, searchedAadhaar) {
   const results = [];
 
-  // Split by "📌 Additional Result:" or main result section
+  // Split into sections (main result + additional results)
   let sections = [];
   if (text.includes('📌 Additional Result:')) {
     const parts = text.split(/📌 Additional Result:/);
-    sections.push(parts[0]); // main result
-    sections.push(...parts.slice(1)); // additional results
+    sections.push(parts[0]);
+    sections.push(...parts.slice(1));
   } else {
     sections = [text];
   }
@@ -112,21 +114,19 @@ function parseLookupResults(text, searchedAadhaar) {
   for (let section of sections) {
     if (!section.trim() || section.trim().length < 20) continue;
 
-    // Extract fields using regex
+    // Extract fields
     const nameMatch = section.match(/👤\s*Name:\s*([^\n]+)/);
     const fatherMatch = section.match(/👨‍👦\s*Father Name:\s*([^\n]+)/);
     const mobileMatch = section.match(/📱\s*Mobile:\s*([^\n]+)/);
     const addressMatch = section.match(/🏠\s*Address:\s*([^\n]+(?:\n\s*[^📱👨‍👦👤📡📞🪪]+)*)/);
-    const circleMatch = section.match(/📡\s*Circle:\s*([^\n]+)/);
     const alternateMatch = section.match(/📞\s*Alternate:\s*([^\n]+)/);
     const aadhaarMatch = section.match(/🪪\s*Aadhaar:\s*([^\n]+)/);
 
     // Clean address
     let address = addressMatch ? addressMatch[1].trim().replace(/\s+/g, ' ') : null;
 
-    // Determine primary mobile
+    // Determine mobile
     let mobile = mobileMatch ? mobileMatch[1].trim() : null;
-    if (!mobile && section.includes('Lookup Result for:')) mobile = null; // not needed
 
     // Build result object
     const resultObj = {
