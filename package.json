@@ -1,8 +1,14 @@
 {
-  "name": "aadhaar-lookup-api",
+  "name": "aadhar-info",
   "version": "1.0.0",
   "type": "module",
+  "description": "Aadhaar lookup API with multi-key authentication",
+  "main": "api/aadhar.js",
   "scripts": {
-    "dev": "vercel dev"
-  }
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "keywords": ["aadhaar", "lookup", "api", "vercel"],
+  "author": "abhay singh",
+  "license": "ISC"
 }
