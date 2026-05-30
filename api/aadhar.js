@@ -5,27 +5,40 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { exploits, api_key } = req.query;
+  const { aadhr, api_key } = req.query;  // Changed from 'exploits' to 'aadhr'
 
+  // --- Multi-Key Authentication ---
   if (!api_key) {
     return res.status(401).json({ 
       error: 'Missing API key', 
-      usage: '?api_key=abhay1&exploits=9876543210',
+      usage: '?api_key=abhay1&aadhr=123456789012',
       valid_keys: VALID_KEYS
     });
   }
   if (!VALID_KEYS.includes(api_key)) {
     return res.status(403).json({ error: 'Invalid API key', valid_keys: VALID_KEYS });
   }
-  if (!exploits) {
-    return res.status(400).json({ error: 'Missing number parameter', usage: '?api_key=KEY&exploits=9876543210' });
+  
+  // --- Aadhaar Validation (12 digits) ---
+  if (!aadhr) {
+    return res.status(400).json({ 
+      error: 'Missing Aadhaar parameter', 
+      usage: '?api_key=KEY&aadhr=123456789012' 
+    });
   }
-  const phoneRegex = /^\d{10}$/;
-  if (!phoneRegex.test(exploits)) {
-    return res.status(400).json({ error: 'Invalid number. Use 10 digits.' });
+  
+  // Remove any spaces or dashes before validation
+  const rawAadhaar = String(aadhr).replace(/[\s\-]/g, '');
+  const aadhaarRegex = /^\d{12}$/;
+  if (!aadhaarRegex.test(rawAadhaar)) {
+    return res.status(400).json({ 
+      error: 'Invalid Aadhaar. Use 12 digits (no spaces or dashes).',
+      example: '123456789012'
+    });
   }
 
-  const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${exploits}`;
+  // Target endpoint still uses 'exploits' parameter
+  const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${rawAadhaar}`;
 
   try {
     const response = await fetch(targetUrl, {
@@ -44,16 +57,17 @@ export default async function handler(req, res) {
     let cleanedText = filteredLines.join('\n');
     
     // Parse cleaned text into JSON results
-    const results = parseLookupResults(cleanedText, exploits);
+    const results = parseLookupResults(cleanedText, rawAadhaar);
     
     const jsonResponse = {
       success: true,
       total_results: results.length,
       results: results,
-      developer: "abhay singh"
+      developer: "abhay singh",
+      queried_aadhaar: rawAadhaar
     };
     
-    console.log(`[KEY_USED] ${api_key} | Number: ${exploits} | Results: ${results.length}`);
+    console.log(`[KEY_USED] ${api_key} | Aadhaar: ${rawAadhaar} | Results: ${results.length}`);
     res.status(200).json(jsonResponse);
     
   } catch (error) {
@@ -62,62 +76,51 @@ export default async function handler(req, res) {
   }
 }
 
-// Parser for the human-readable format
-function parseLookupResults(text, searchedMobile) {
+// Parser function (same as before, unchanged)
+function parseLookupResults(text, searchedAadhaar) {
   const results = [];
   
-  // Split by "📌 Additional Result:" or main result section
-  // First, extract main result (before first "📌 Additional Result" if exists)
   let sections = [];
   if (text.includes('📌 Additional Result:')) {
     const parts = text.split(/📌 Additional Result:/);
-    sections.push(parts[0]); // main result
-    sections.push(...parts.slice(1)); // additional results
+    sections.push(parts[0]);
+    sections.push(...parts.slice(1));
   } else {
     sections = [text];
   }
   
   for (let section of sections) {
-    // Skip empty sections
     if (!section.trim() || section.trim().length < 20) continue;
     
-    // Extract fields using regex
     const nameMatch = section.match(/👤\s*Name:\s*([^\n]+)/);
     const fatherMatch = section.match(/👨‍👦\s*Father Name:\s*([^\n]+)/);
     const mobileMatch = section.match(/📱\s*Mobile:\s*([^\n]+)/);
     const addressMatch = section.match(/🏠\s*Address:\s*([^\n]+(?:\n\s*[^📱👨‍👦👤📡📞🪪]+)*)/);
-    const circleMatch = section.match(/📡\s*Circle:\s*([^\n]+)/);
     const alternateMatch = section.match(/📞\s*Alternate:\s*([^\n]+)/);
     const aadhaarMatch = section.match(/🪪\s*Aadhaar:\s*([^\n]+)/);
     
-    // Clean up address (remove extra newlines/spaces)
     let address = addressMatch ? addressMatch[1].trim().replace(/\s+/g, ' ') : null;
-    
-    // Determine primary mobile: if this section is main result, use searchedMobile; else use extracted mobile
     let mobile = mobileMatch ? mobileMatch[1].trim() : null;
-    if (!mobile && section.includes('Lookup Result for:')) mobile = searchedMobile;
     
-    // Build result object matching required fields
     const resultObj = {
       address: address || null,
-      email: null,  // Not available in format
+      email: null,
       fname: fatherMatch ? fatherMatch[1].trim() : null,
       id: aadhaarMatch ? aadhaarMatch[1].trim() : (alternateMatch ? alternateMatch[1].trim() : null),
       mobile: mobile,
       name: nameMatch ? nameMatch[1].trim() : null
     };
     
-    // Only add if at least name or mobile exists
-    if (resultObj.name || resultObj.mobile) {
+    if (resultObj.name || resultObj.mobile || resultObj.id) {
       results.push(resultObj);
     }
   }
   
-  // Deduplicate by mobile number (keep first occurrence)
   const seen = new Set();
   return results.filter(r => {
-    if (r.mobile && seen.has(r.mobile)) return false;
-    if (r.mobile) seen.add(r.mobile);
+    const key = r.mobile || r.id;
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
     return true;
   });
 }
