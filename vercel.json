@@ -1,0 +1,9 @@
+{
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/scrape.js" }],
+  "functions": {
+    "api/scrape.js": {
+      "maxDuration": 10,
+      "memory": 1024
+    }
+  }
+}
