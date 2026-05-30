@@ -1,4 +1,4 @@
-// Hardcoded multi-key system as requested
+// Hardcoded multi-key system: abhay1 to abhay5
 const VALID_KEYS = [
   'abhay1',
   'abhay2',
@@ -7,11 +7,8 @@ const VALID_KEYS = [
   'abhay5'
 ];
 
-const FOOTER = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💳 BUY API : @Cyb3rS0ldier
-🆘 SUPPORT : @Cyb3rS0ldier
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+// Credit line to add (exactly as requested)
+const DEVELOPER_CREDIT = '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\ndeveloper by abhay singh\n━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -22,7 +19,7 @@ export default async function handler(req, res) {
 
   const { exploits, api_key } = req.query;
 
-  // --- Multi-Key Authentication with abhay1-5 ---
+  // --- Multi-Key Authentication ---
   if (!api_key) {
     return res.status(401).json({ 
       error: 'Missing API key', 
@@ -63,17 +60,37 @@ export default async function handler(req, res) {
 
     let content = await response.text();
 
-    // --- Remove any "developer by abhay singh" line (case-insensitive) ---
-    const removePattern = /developer\s+by\s+abhay\s+singh/gi;
-    content = content.replace(removePattern, '');
+    // --- Remove all lines containing BUY API / SUPPORT / @Cyb3rS0ldier ---
+    // Split into lines, filter out unwanted lines, then rejoin
+    const lines = content.split(/\r?\n/);
+    const filteredLines = lines.filter(line => {
+      const lowerLine = line.toLowerCase();
+      // Remove if line contains any of these patterns
+      const shouldRemove = 
+        lowerLine.includes('buy api') ||
+        lowerLine.includes('@cyb3rs0ldier') ||
+        lowerLine.includes('support') && lowerLine.includes('@') || // catches "🆘 SUPPORT : @Cyb3rS0ldier"
+        lowerLine.includes('💳') && lowerLine.includes('@') ||
+        (lowerLine.includes('━━━━') && lowerLine.includes('buy')); // catch divider lines adjacent to buy/support
+        
+      return !shouldRemove;
+    });
+    
+    // Also remove any leftover standalone divider lines that are empty or just dashes (optional)
+    let cleanedContent = filteredLines.join('\n');
+    
+    // Remove duplicate empty lines
+    cleanedContent = cleanedContent.replace(/\n\s*\n/g, '\n\n');
+    
+    // Trim trailing/leading whitespace
+    cleanedContent = cleanedContent.trim();
+    
+    // --- Append developer credit at the end ---
+    const finalContent = cleanedContent + DEVELOPER_CREDIT;
 
-    // --- Append required footer ---
-    content = content + FOOTER;
+    console.log(`[KEY_USED] ${api_key} accessed number: ${exploits} | Filtered length: ${finalContent.length}`);
 
-    // Optional: Log which key was used (visible in Vercel logs)
-    console.log(`[KEY_USED] ${api_key} accessed number: ${exploits}`);
-
-    res.status(response.status).send(content);
+    res.status(response.status).send(finalContent);
   } catch (error) {
     console.error('Scraping error:', error);
     res.status(500).json({ 
