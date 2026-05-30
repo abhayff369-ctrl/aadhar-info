@@ -7,38 +7,25 @@ export default async function handler(req, res) {
 
   const { exploits, api_key } = req.query;
 
-  // --- Multi-Key Authentication ---
   if (!api_key) {
     return res.status(401).json({ 
       error: 'Missing API key', 
-      usage: '?api_key=abhay1&exploits=123456789012',
+      usage: '?api_key=abhay1&exploits=9876543210',
       valid_keys: VALID_KEYS
     });
   }
   if (!VALID_KEYS.includes(api_key)) {
     return res.status(403).json({ error: 'Invalid API key', valid_keys: VALID_KEYS });
   }
-  
-  // --- Aadhaar Validation (12 digits) ---
   if (!exploits) {
-    return res.status(400).json({ 
-      error: 'Missing Aadhaar parameter', 
-      usage: '?api_key=KEY&exploits=123456789012' 
-    });
+    return res.status(400).json({ error: 'Missing number parameter', usage: '?api_key=KEY&exploits=9876543210' });
   }
-  
-  // Remove any spaces or dashes before validation
-  const rawAadhaar = String(exploits).replace(/[\s\-]/g, '');
-  const aadhaarRegex = /^\d{12}$/;
-  if (!aadhaarRegex.test(rawAadhaar)) {
-    return res.status(400).json({ 
-      error: 'Invalid Aadhaar. Use 12 digits (no spaces or dashes).',
-      example: '123456789012'
-    });
+  const phoneRegex = /^\d{10}$/;
+  if (!phoneRegex.test(exploits)) {
+    return res.status(400).json({ error: 'Invalid number. Use 10 digits.' });
   }
 
-  // Use cleaned Aadhaar in target URL
-  const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${rawAadhaar}`;
+  const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${exploits}`;
 
   try {
     const response = await fetch(targetUrl, {
@@ -56,18 +43,17 @@ export default async function handler(req, res) {
     });
     let cleanedText = filteredLines.join('\n');
     
-    // Parse cleaned text into JSON results (passing Aadhaar as searched ID)
-    const results = parseLookupResults(cleanedText, rawAadhaar);
+    // Parse cleaned text into JSON results
+    const results = parseLookupResults(cleanedText, exploits);
     
     const jsonResponse = {
       success: true,
       total_results: results.length,
       results: results,
-      developer: "abhay singh",
-      queried_aadhaar: rawAadhaar
+      developer: "abhay singh"
     };
     
-    console.log(`[KEY_USED] ${api_key} | Aadhaar: ${rawAadhaar} | Results: ${results.length}`);
+    console.log(`[KEY_USED] ${api_key} | Number: ${exploits} | Results: ${results.length}`);
     res.status(200).json(jsonResponse);
     
   } catch (error) {
@@ -77,20 +63,22 @@ export default async function handler(req, res) {
 }
 
 // Parser for the human-readable format
-function parseLookupResults(text, searchedAadhaar) {
+function parseLookupResults(text, searchedMobile) {
   const results = [];
   
   // Split by "📌 Additional Result:" or main result section
+  // First, extract main result (before first "📌 Additional Result" if exists)
   let sections = [];
   if (text.includes('📌 Additional Result:')) {
     const parts = text.split(/📌 Additional Result:/);
-    sections.push(parts[0]);
-    sections.push(...parts.slice(1));
+    sections.push(parts[0]); // main result
+    sections.push(...parts.slice(1)); // additional results
   } else {
     sections = [text];
   }
   
   for (let section of sections) {
+    // Skip empty sections
     if (!section.trim() || section.trim().length < 20) continue;
     
     // Extract fields using regex
@@ -102,32 +90,34 @@ function parseLookupResults(text, searchedAadhaar) {
     const alternateMatch = section.match(/📞\s*Alternate:\s*([^\n]+)/);
     const aadhaarMatch = section.match(/🪪\s*Aadhaar:\s*([^\n]+)/);
     
+    // Clean up address (remove extra newlines/spaces)
     let address = addressMatch ? addressMatch[1].trim().replace(/\s+/g, ' ') : null;
+    
+    // Determine primary mobile: if this section is main result, use searchedMobile; else use extracted mobile
     let mobile = mobileMatch ? mobileMatch[1].trim() : null;
+    if (!mobile && section.includes('Lookup Result for:')) mobile = searchedMobile;
     
-    // For main result, if no mobile found, don't use searchedAadhaar as mobile
-    // Aadhaar goes to 'id' field primarily
-    
+    // Build result object matching required fields
     const resultObj = {
       address: address || null,
-      email: null,
+      email: null,  // Not available in format
       fname: fatherMatch ? fatherMatch[1].trim() : null,
       id: aadhaarMatch ? aadhaarMatch[1].trim() : (alternateMatch ? alternateMatch[1].trim() : null),
       mobile: mobile,
       name: nameMatch ? nameMatch[1].trim() : null
     };
     
-    if (resultObj.name || resultObj.mobile || resultObj.id) {
+    // Only add if at least name or mobile exists
+    if (resultObj.name || resultObj.mobile) {
       results.push(resultObj);
     }
   }
   
-  // Deduplicate by mobile number (or Aadhaar if mobile missing)
+  // Deduplicate by mobile number (keep first occurrence)
   const seen = new Set();
   return results.filter(r => {
-    const key = r.mobile || r.id;
-    if (key && seen.has(key)) return false;
-    if (key) seen.add(key);
+    if (r.mobile && seen.has(r.mobile)) return false;
+    if (r.mobile) seen.add(r.mobile);
     return true;
   });
 }
