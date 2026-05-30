@@ -1,123 +1,205 @@
-const VALID_KEYS = ['abhay1', 'abhay2', 'abhay3', 'abhay4', 'abhay5'];
+// File: api/aadhar.js
+// Fixed parser – now extracts results reliably
+
+const VALID_KEYS = [
+  'abhay1', 'abhay2', 'abhay3', 'abhay4', 'abhay5',
+  'demo123'
+];
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-  const { exploits, api_key } = req.query;
+  const { aadhr, api_key, debug } = req.query;
 
+  // --- Authentication ---
   if (!api_key) {
     return res.status(401).json({ 
+      success: false,
       error: 'Missing API key', 
-      usage: '?api_key=abhay1&exploits=9876543210',
       valid_keys: VALID_KEYS
     });
   }
   if (!VALID_KEYS.includes(api_key)) {
-    return res.status(403).json({ error: 'Invalid API key', valid_keys: VALID_KEYS });
+    return res.status(403).json({ success: false, error: 'Invalid API key' });
   }
-  if (!exploits) {
-    return res.status(400).json({ error: 'Missing number parameter', usage: '?api_key=KEY&exploits=9876543210' });
+  
+  // --- Aadhaar Validation ---
+  if (!aadhr) {
+    return res.status(400).json({ success: false, error: 'Missing aadhr parameter' });
   }
-  const phoneRegex = /^\d{10}$/;
-  if (!phoneRegex.test(exploits)) {
-    return res.status(400).json({ error: 'Invalid number. Use 10 digits.' });
+  
+  const rawAadhaar = String(aadhr).replace(/[\s\-]/g, '');
+  if (!/^\d{12}$/.test(rawAadhaar)) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Invalid Aadhaar. Use 12 digits.' 
+    });
   }
 
-  const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${exploits}`;
+  const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${rawAadhaar}`;
 
   try {
     const response = await fetch(targetUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VercelBot/1.0)' }
     });
+    
     let rawText = await response.text();
+    
+    // Log raw response for debugging (visible in Vercel logs)
+    console.log(`[RAW_RESPONSE] Aadhaar: ${rawAadhaar} | Length: ${rawText.length}`);
+    console.log(`[RAW_PREVIEW] ${rawText.substring(0, 500)}`);
 
-    // Remove BUY/SUPPORT footer lines
+    // --- Remove BUY/SUPPORT footer lines ---
     const lines = rawText.split(/\r?\n/);
     const filteredLines = lines.filter(line => {
       const lower = line.toLowerCase();
-      return !(lower.includes('buy api') || lower.includes('@cyb3rs0ldier') || 
-               (lower.includes('support') && lower.includes('@')) ||
-               (lower.includes('💳') && lower.includes('@')));
+      return !(
+        lower.includes('buy api') ||
+        lower.includes('@cyb3rs0ldier') ||
+        (lower.includes('support') && lower.includes('@')) ||
+        lower.includes('cyb3rs0ldier')
+      );
     });
     let cleanedText = filteredLines.join('\n');
     
-    // Parse cleaned text into JSON results
-    const results = parseLookupResults(cleanedText, exploits);
+    // --- Parse results using improved function ---
+    const results = parseLookupResultsImproved(cleanedText, rawAadhaar);
     
     const jsonResponse = {
       success: true,
       total_results: results.length,
       results: results,
-      developer: "abhay singh"
+      developer: "abhay singh",
+      queried_aadhaar: rawAadhaar,
+      api_key_used: api_key === 'demo123' ? 'demo' : 'premium'
     };
     
-    console.log(`[KEY_USED] ${api_key} | Number: ${exploits} | Results: ${results.length}`);
+    // If debug=true, include raw response for inspection
+    if (debug === 'true') {
+      jsonResponse.debug_raw_response = rawText.substring(0, 2000);
+      jsonResponse.debug_cleaned = cleanedText.substring(0, 1000);
+    }
+    
     res.status(200).json(jsonResponse);
     
   } catch (error) {
-    console.error('Scraping error:', error);
-    res.status(500).json({ error: 'Failed to fetch from target', details: error.message });
+    console.error('Fetch error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 }
 
-// Parser for the human-readable format
-function parseLookupResults(text, searchedMobile) {
+/**
+ * Improved parser – multiple strategies to extract data
+ */
+function parseLookupResultsImproved(text, searchedAadhaar) {
   const results = [];
   
-  // Split by "📌 Additional Result:" or main result section
-  // First, extract main result (before first "📌 Additional Result" if exists)
+  if (!text || text.length < 20) {
+    console.log('[PARSER] Text too short, returning empty');
+    return results;
+  }
+  
+  // Strategy 1: Split by common separators
   let sections = [];
-  if (text.includes('📌 Additional Result:')) {
-    const parts = text.split(/📌 Additional Result:/);
-    sections.push(parts[0]); // main result
-    sections.push(...parts.slice(1)); // additional results
-  } else {
+  
+  // Try to split by "📌 Additional Result:" or "Additional Result"
+  if (text.includes('📌 Additional Result')) {
+    sections = text.split(/📌\s*Additional\s*Result:?/i);
+  } 
+  else if (text.includes('Additional Result')) {
+    sections = text.split(/Additional\s*Result:?/i);
+  }
+  else {
+    // If no additional results, treat whole text as one section
     sections = [text];
   }
   
-  for (let section of sections) {
-    // Skip empty sections
-    if (!section.trim() || section.trim().length < 20) continue;
+  console.log(`[PARSER] Found ${sections.length} sections`);
+  
+  for (let idx = 0; idx < sections.length; idx++) {
+    let section = sections[idx];
+    if (!section.trim() || section.trim().length < 30) continue;
     
-    // Extract fields using regex
-    const nameMatch = section.match(/👤\s*Name:\s*([^\n]+)/);
-    const fatherMatch = section.match(/👨‍👦\s*Father Name:\s*([^\n]+)/);
-    const mobileMatch = section.match(/📱\s*Mobile:\s*([^\n]+)/);
-    const addressMatch = section.match(/🏠\s*Address:\s*([^\n]+(?:\n\s*[^📱👨‍👦👤📡📞🪪]+)*)/);
-    const circleMatch = section.match(/📡\s*Circle:\s*([^\n]+)/);
-    const alternateMatch = section.match(/📞\s*Alternate:\s*([^\n]+)/);
-    const aadhaarMatch = section.match(/🪪\s*Aadhaar:\s*([^\n]+)/);
-    
-    // Clean up address (remove extra newlines/spaces)
-    let address = addressMatch ? addressMatch[1].trim().replace(/\s+/g, ' ') : null;
-    
-    // Determine primary mobile: if this section is main result, use searchedMobile; else use extracted mobile
-    let mobile = mobileMatch ? mobileMatch[1].trim() : null;
-    if (!mobile && section.includes('Lookup Result for:')) mobile = searchedMobile;
-    
-    // Build result object matching required fields
-    const resultObj = {
-      address: address || null,
-      email: null,  // Not available in format
-      fname: fatherMatch ? fatherMatch[1].trim() : null,
-      id: aadhaarMatch ? aadhaarMatch[1].trim() : (alternateMatch ? alternateMatch[1].trim() : null),
-      mobile: mobile,
-      name: nameMatch ? nameMatch[1].trim() : null
+    // Extract fields using flexible patterns (allow missing spaces, different emojis)
+    const extract = (pattern) => {
+      const match = section.match(new RegExp(pattern, 'i'));
+      return match ? match[1].trim() : null;
     };
     
-    // Only add if at least name or mobile exists
-    if (resultObj.name || resultObj.mobile) {
+    // Try multiple patterns for each field
+    let name = extract('👤\\s*Name\\s*:\\s*([^\\n\\r]+)') ||
+               extract('Name\\s*:\\s*([^\\n\\r]+)');
+               
+    let fname = extract('👨‍👦\\s*Father\\s*Name\\s*:\\s*([^\\n\\r]+)') ||
+                extract('Father\\s*Name\\s*:\\s*([^\\n\\r]+)');
+                
+    let mobile = extract('📱\\s*Mobile\\s*:\\s*([^\\n\\r]+)') ||
+                 extract('Mobile\\s*:\\s*([^\\n\\r]+)');
+                 
+    let address = extract('🏠\\s*Address\\s*:\\s*([^\\n\\r]+(?:\\n[^📱👨‍👦👤📡📞🪪]+)*)') ||
+                  extract('Address\\s*:\\s*([^\\n\\r]+)');
+                  
+    let circle = extract('📡\\s*Circle\\s*:\\s*([^\\n\\r]+)') ||
+                 extract('Circle\\s*:\\s*([^\\n\\r]+)');
+                 
+    let alternate = extract('📞\\s*Alternate\\s*:\\s*([^\\n\\r]+)') ||
+                    extract('Alternate\\s*:\\s*([^\\n\\r]+)');
+                    
+    let aadhaar = extract('🪪\\s*Aadhaar\\s*:\\s*([^\\n\\r]+)') ||
+                  extract('Aadhaar\\s*:\\s*([^\\n\\r]+)');
+    
+    // Clean up address (remove extra newlines)
+    if (address) {
+      address = address.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    
+    // If we didn't get mobile from pattern, try line-by-line in this section
+    if (!mobile) {
+      const lines = section.split(/\r?\n/);
+      for (const line of lines) {
+        if (line.includes('Mobile') || line.includes('📱')) {
+          const match = line.match(/(\d{10})/);
+          if (match) mobile = match[1];
+        }
+      }
+    }
+    
+    // Build result object
+    const resultObj = {
+      address: address || null,
+      email: null,
+      fname: fname || null,
+      id: aadhaar || alternate || null,
+      mobile: mobile || null,
+      name: name || null
+    };
+    
+    // Add extra fields for debugging
+    if (circle) resultObj.circle = circle;
+    if (alternate) resultObj.alternate = alternate;
+    
+    // Only add if we have at least a name or mobile
+    if (resultObj.name || resultObj.mobile || resultObj.id) {
       results.push(resultObj);
+      console.log(`[PARSER] Extracted: ${resultObj.name || 'unknown'} | ${resultObj.mobile || 'no mobile'}`);
     }
   }
   
-  // Deduplicate by mobile number (keep first occurrence)
+  // Deduplicate
   const seen = new Set();
-  return results.filter(r => {
-    if (r.mobile && seen.has(r.mobile)) return false;
-    if (r.mobile) seen.add(r.mobile);
+  const unique = results.filter(r => {
+    const key = r.mobile || r.id;
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
     return true;
   });
+  
+  console.log(`[PARSER] Total unique results: ${unique.length}`);
+  return unique;
 }
