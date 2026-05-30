@@ -1,9 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/api/aadhar", "destination": "/api/aadhar.js" }
-  ],
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/aadhar.js" }],
   "functions": {
-    "api/aadhar.js": {
+    "api/scrape.js": {
       "maxDuration": 10,
       "memory": 1024
     }
