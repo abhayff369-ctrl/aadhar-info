@@ -50,7 +50,7 @@ export default async function handler(req, res) {
   }
 
   // ---------- 3. Call Target API ----------
-  const targetUrl = `https://exploitsindia.site/api/number.php?exploits=${exploits}`;
+  const targetUrl = `https://believes-shore-funny-void.trycloudflare.com/search?q=${number}`;
 
   try {
     const response = await fetch(targetUrl, {
